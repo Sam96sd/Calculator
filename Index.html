@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>حاسبة تسوية الحسابات</title>
+    <title>حاسبة تسوية الحسابات - GitHub Sync</title>
     <style>
         :root {
             --bg: #0f172a;
@@ -30,14 +30,22 @@
             flex-direction: column;
             gap: 16px;
         }
+        .config-box {
+            background: #1e293b;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
         .status-badge {
-            font-size: 0.8rem;
-            color: var(--success);
-            text-align: center;
-            background: #064e3b33;
-            border: 1px solid #065f46;
-            padding: 6px;
+            font-size: 0.85rem;
+            padding: 6px 12px;
             border-radius: 8px;
+            text-align: center;
+            background: #334155;
+            color: var(--text);
         }
         .cards {
             display: grid;
@@ -81,21 +89,8 @@
             font-weight: bold;
             border: none;
             cursor: pointer;
-            margin-top: 4px;
         }
-        button.btn-reset {
-            background: transparent;
-            color: #94a3b8;
-            border: 1px solid var(--border);
-            cursor: pointer;
-            font-size: 0.8rem;
-            padding: 6px 12px;
-            border-radius: 6px;
-        }
-        button.btn-reset:hover {
-            color: var(--danger);
-            border-color: var(--danger);
-        }
+        button.btn-add:disabled { opacity: 0.5; cursor: not-allowed; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -112,21 +107,25 @@
             color: var(--danger);
             border: none;
             cursor: pointer;
-            padding: 2px 6px;
             font-size: 1.1rem;
-        }
-        .header-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="status-badge">✓ الحفظ التلقائي مفعّل: تبقى الحسابات محفوظة في ذاكرة هذا المتصفح</div>
+    <div id="status" class="status-badge">جاري التحقق من إعدادات المزامنة...</div>
+
+    <!-- إعدادات الربط مع GitHub -->
+    <details class="config-box" id="configSection">
+        <summary style="cursor: pointer; color: var(--accent); font-weight: bold;">⚙️ إعدادات الربط مع GitHub (اضغط للتعديل)</summary>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+            <input type="text" id="ghUsername" placeholder="اسم المستخدم على GitHub (Username)">
+            <input type="text" id="ghRepo" placeholder="اسم المستودع (Repository Name)">
+            <input type="password" id="ghToken" placeholder="رمز الوصول (Personal Access Token)">
+            <button class="btn-add" onclick="saveConfig()">حفظ والاتصال</button>
+        </div>
+    </details>
 
     <div class="cards">
         <div class="card total-card">
@@ -154,14 +153,11 @@
         <input type="number" id="amount" placeholder="المبلغ الكلي بالدرهم" step="any">
         <input type="number" id="samerShare" placeholder="حصة سامر من المبلغ المشترك" step="any" style="display: none;">
         <input type="text" id="desc" placeholder="البيان / ملاحظة (اختياري)">
-        <button class="btn-add" onclick="addEntry()">إضافة الحركة</button>
+        <button class="btn-add" id="submitBtn" onclick="addEntry()">إضافة الحركة ومزامنتها</button>
     </div>
 
     <div class="card" style="text-align: right;">
-        <div class="header-actions">
-            <h3 style="margin: 0;">سجل الحركات</h3>
-            <button class="btn-reset" onclick="resetAll()">إعادة ضبط السجل</button>
-        </div>
+        <h3 style="margin: 0 0 8px;">سجل الحركات</h3>
         <table>
             <thead>
                 <tr>
@@ -177,31 +173,103 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'financial_calc_state_v1';
+    let appData = { baseSamer: 24668.28, baseMahmoud: 124.22, entries: [] };
+    let fileSha = ''; // مطلوب من قبل GitHub API لتحديث الملف
 
-    // الأرصدة التأسيسية الافتراضية
-    const BASE_SAMER = 24668.28;
-    const BASE_MAHMOUD = 124.22;
+    function setStatus(text, color) {
+        const el = document.getElementById('status');
+        el.innerText = text;
+        if (color) el.style.color = color;
+    }
 
-    let appData = {
-        baseSamer: BASE_SAMER,
-        baseMahmoud: BASE_MAHMOUD,
-        entries: []
-    };
+    function toggleFields() {
+        const type = document.getElementById('opType').value;
+        document.getElementById('samerShare').style.display = (type === 'joint_in') ? 'block' : 'none';
+    }
 
-    function loadData() {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            try {
-                appData = JSON.parse(saved);
-            } catch (e) {
-                console.error("خطأ في قراءة البيانات المحفوظة", e);
-            }
+    function saveConfig() {
+        const u = document.getElementById('ghUsername').value.trim();
+        const r = document.getElementById('ghRepo').value.trim();
+        const t = document.getElementById('ghToken').value.trim();
+        if (!u || !r || !t) return alert('يرجى ملء جميع بيانات GitHub');
+
+        localStorage.setItem('gh_sync_u', u);
+        localStorage.setItem('gh_sync_r', r);
+        localStorage.setItem('gh_sync_t', t);
+        document.getElementById('configSection').removeAttribute('open');
+        fetchFromGitHub();
+    }
+
+    // جلب البيانات من ملف data.json عبر API
+    async function fetchFromGitHub() {
+        const u = localStorage.getItem('gh_sync_u');
+        const r = localStorage.getItem('gh_sync_r');
+        const t = localStorage.getItem('gh_sync_t');
+
+        if (!u || !r || !t) {
+            setStatus('⚠️ يرجى إدخال إعدادات GitHub من القائمة أدناه لتفعيل المزامنة', 'var(--accent)');
+            document.getElementById('configSection').setAttribute('open', 'true');
+            return;
+        }
+
+        setStatus('جاري تحميل البيانات من GitHub...', 'var(--text)');
+        try {
+            const res = await fetch(`https://api.github.com/repos/${u}/${r}/contents/data.json`, {
+                headers: {
+                    'Authorization': `Bearer ${t}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            });
+
+            if (!res.ok) throw new Error('فشل جلب الملف. تأكد من صحة الـ Token واسم المستودع وجود ملف data.json');
+
+            const json = await res.json();
+            fileSha = json.sha; // حفظ الـ SHA للمستند الحالي
+            const decodedContent = decodeURIComponent(escape(atob(json.content)));
+            appData = JSON.parse(decodedContent);
+
+            updateView();
+            setStatus('✓ متصل بالسحابة ومتزامن مع GitHub', 'var(--success)');
+        } catch (err) {
+            setStatus('❌ خطأ: ' + err.message, 'var(--danger)');
         }
     }
 
-    function saveData() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    // كتابة وحفظ البيانات في data.json عبر API
+    async function syncToGitHub() {
+        const u = localStorage.getItem('gh_sync_u');
+        const r = localStorage.getItem('gh_sync_r');
+        const t = localStorage.getItem('gh_sync_t');
+
+        setStatus('جاري حفظ التغييرات على GitHub...', 'var(--accent)');
+        document.getElementById('submitBtn').disabled = true;
+
+        try {
+            const contentEncoded = btoa(unescape(encodeURIComponent(JSON.stringify(appData, null, 2))));
+            const res = await fetch(`https://api.github.com/repos/${u}/${r}/contents/data.json`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${t}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'تحديث الحسابات من التطبيق',
+                    content: contentEncoded,
+                    sha: fileSha
+                })
+            });
+
+            if (!res.ok) throw new Error('فشل حفظ البيانات على GitHub');
+
+            const json = await res.json();
+            fileSha = json.content.sha;
+            setStatus('✓ تم الحفظ بنجاح على GitHub', 'var(--success)');
+        } catch (err) {
+            setStatus('❌ خطأ في الحفظ: ' + err.message, 'var(--danger)');
+        } finally {
+            document.getElementById('submitBtn').disabled = false;
+        }
     }
 
     function updateView() {
@@ -231,25 +299,20 @@
                 <td>${e.desc || '-'}</td>
                 <td>${e.amt.toFixed(2)}</td>
                 <td>${e.detail}</td>
-                <td><button class="del-btn" title="حذف" onclick="removeEntry(${idx})">×</button></td>
+                <td><button class="del-btn" onclick="removeEntry(${idx})">×</button></td>
             `;
             tbody.appendChild(tr);
         });
     }
 
-    function toggleFields() {
-        const type = document.getElementById('opType').value;
-        document.getElementById('samerShare').style.display = (type === 'joint_in') ? 'block' : 'none';
-    }
-
-    function addEntry() {
+    async function addEntry() {
         const type = document.getElementById('opType').value;
         const amt = parseFloat(document.getElementById('amount').value);
         const desc = document.getElementById('desc').value.trim();
         const samerPart = parseFloat(document.getElementById('samerShare').value) || 0;
 
         if (isNaN(amt) || amt <= 0) return alert('يرجى إدخال مبلغ صالح');
-        if (type === 'joint_in' && (samerPart < 0 || samerPart > amt)) return alert('يرجى التأكد من أن حصة سامر بين 0 والمبلغ الكلي');
+        if (type === 'joint_in' && (samerPart < 0 || samerPart > amt)) return alert('يرجى التحقق من حصة سامر');
 
         let detail = '';
         if (type === 'samer_in') detail = 'لسامر';
@@ -259,31 +322,27 @@
         if (type === 'joint_in') detail = `مشترك (${samerPart} لسامر)`;
 
         appData.entries.push({ type, amt, desc, samerPart, detail });
-        saveData();
+        updateView();
+        await syncToGitHub();
 
         document.getElementById('amount').value = '';
         document.getElementById('samerShare').value = '';
         document.getElementById('desc').value = '';
-        updateView();
     }
 
-    function removeEntry(index) {
+    async function removeEntry(index) {
+        if (!confirm('هل تريد حذف هذه الحركة؟')) return;
         appData.entries.splice(index, 1);
-        saveData();
         updateView();
+        await syncToGitHub();
     }
 
-    function resetAll() {
-        if (confirm('هل أنت متأكد من مسح جميع الحركات المحفوظة والعودة للرصيد التأسيسي؟')) {
-            appData.entries = [];
-            saveData();
-            updateView();
-        }
-    }
+    // تعبئة البيانات مسبقاً إذا كانت موجودة
+    document.getElementById('ghUsername').value = localStorage.getItem('gh_sync_u') || '';
+    document.getElementById('ghRepo').value = localStorage.getItem('gh_sync_r') || '';
+    document.getElementById('ghToken').value = localStorage.getItem('gh_sync_t') || '';
 
-    // بدء التشغيل
-    loadData();
-    updateView();
+    fetchFromGitHub();
 </script>
 </body>
 </html>
