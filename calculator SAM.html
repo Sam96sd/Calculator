@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حاسبة تسوية الحسابات</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --accent: #38bdf8;
+            --danger: #f87171;
+            --border: #334155;
+            --success: #34d399;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 650px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .status-badge {
+            font-size: 0.8rem;
+            color: var(--success);
+            text-align: center;
+            background: #064e3b33;
+            border: 1px solid #065f46;
+            padding: 6px;
+            border-radius: 8px;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .card h3 { margin: 0 0 8px; font-size: 0.95rem; color: #94a3b8; }
+        .card .amount { font-size: 1.4rem; font-weight: bold; }
+        .total-card {
+            grid-column: span 2;
+            background: #1e1b4b;
+            border-color: #4338ca;
+        }
+        .form {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        select, input, button {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #0f172a;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+        button.btn-add {
+            background: var(--accent);
+            color: #0f172a;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+        button.btn-reset {
+            background: transparent;
+            color: #94a3b8;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 0.8rem;
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+        button.btn-reset:hover {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: right;
+            border-bottom: 1px solid var(--border);
+        }
+        .del-btn {
+            background: transparent;
+            color: var(--danger);
+            border: none;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 1.1rem;
+        }
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="status-badge">✓ الحفظ التلقائي مفعّل: تبقى الحسابات محفوظة في ذاكرة هذا المتصفح</div>
+
+    <div class="cards">
+        <div class="card total-card">
+            <h3>التوتال الكلي في الحساب</h3>
+            <div class="amount" id="totalVal">0.00 درهم</div>
+        </div>
+        <div class="card">
+            <h3>رصيد سامر</h3>
+            <div class="amount" id="samerVal">0.00 درهم</div>
+        </div>
+        <div class="card">
+            <h3>رصيد محمود</h3>
+            <div class="amount" id="mahmoudVal">0.00 درهم</div>
+        </div>
+    </div>
+
+    <div class="form">
+        <select id="opType" onchange="toggleFields()">
+            <option value="samer_in">حوالة واردة لسامر (+)</option>
+            <option value="mahmoud_in">حوالة واردة لمحمود (+)</option>
+            <option value="joint_in">حوالة واردة مشتركة (+)</option>
+            <option value="samer_out">خصم / مصروف من سامر (-)</option>
+            <option value="mahmoud_out">خصم / مصروف من محمود (-)</option>
+        </select>
+        <input type="number" id="amount" placeholder="المبلغ الكلي بالدرهم" step="any">
+        <input type="number" id="samerShare" placeholder="حصة سامر من المبلغ المشترك" step="any" style="display: none;">
+        <input type="text" id="desc" placeholder="البيان / ملاحظة (اختياري)">
+        <button class="btn-add" onclick="addEntry()">إضافة الحركة</button>
+    </div>
+
+    <div class="card" style="text-align: right;">
+        <div class="header-actions">
+            <h3 style="margin: 0;">سجل الحركات</h3>
+            <button class="btn-reset" onclick="resetAll()">إعادة ضبط السجل</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>البيان</th>
+                    <th>المبلغ</th>
+                    <th>التفصيل</th>
+                    <th>حذف</th>
+                </tr>
+            </thead>
+            <tbody id="logBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const STORAGE_KEY = 'financial_calc_state_v1';
+
+    // الأرصدة التأسيسية الافتراضية
+    const BASE_SAMER = 24668.28;
+    const BASE_MAHMOUD = 124.22;
+
+    let appData = {
+        baseSamer: BASE_SAMER,
+        baseMahmoud: BASE_MAHMOUD,
+        entries: []
+    };
+
+    function loadData() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            try {
+                appData = JSON.parse(saved);
+            } catch (e) {
+                console.error("خطأ في قراءة البيانات المحفوظة", e);
+            }
+        }
+    }
+
+    function saveData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    }
+
+    function updateView() {
+        let curSamer = appData.baseSamer;
+        let curMahmoud = appData.baseMahmoud;
+
+        appData.entries.forEach(e => {
+            if (e.type === 'samer_in') curSamer += e.amt;
+            if (e.type === 'mahmoud_in') curMahmoud += e.amt;
+            if (e.type === 'samer_out') curSamer -= e.amt;
+            if (e.type === 'mahmoud_out') curMahmoud -= e.amt;
+            if (e.type === 'joint_in') {
+                curSamer += e.samerPart;
+                curMahmoud += (e.amt - e.samerPart);
+            }
+        });
+
+        document.getElementById('samerVal').innerText = curSamer.toFixed(2) + ' د.إ';
+        document.getElementById('mahmoudVal').innerText = curMahmoud.toFixed(2) + ' د.إ';
+        document.getElementById('totalVal').innerText = (curSamer + curMahmoud).toFixed(2) + ' د.إ';
+
+        const tbody = document.getElementById('logBody');
+        tbody.innerHTML = '';
+        appData.entries.forEach((e, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${e.desc || '-'}</td>
+                <td>${e.amt.toFixed(2)}</td>
+                <td>${e.detail}</td>
+                <td><button class="del-btn" title="حذف" onclick="removeEntry(${idx})">×</button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function toggleFields() {
+        const type = document.getElementById('opType').value;
+        document.getElementById('samerShare').style.display = (type === 'joint_in') ? 'block' : 'none';
+    }
+
+    function addEntry() {
+        const type = document.getElementById('opType').value;
+        const amt = parseFloat(document.getElementById('amount').value);
+        const desc = document.getElementById('desc').value.trim();
+        const samerPart = parseFloat(document.getElementById('samerShare').value) || 0;
+
+        if (isNaN(amt) || amt <= 0) return alert('يرجى إدخال مبلغ صالح');
+        if (type === 'joint_in' && (samerPart < 0 || samerPart > amt)) return alert('يرجى التأكد من أن حصة سامر بين 0 والمبلغ الكلي');
+
+        let detail = '';
+        if (type === 'samer_in') detail = 'لسامر';
+        if (type === 'mahmoud_in') detail = 'لمحمود';
+        if (type === 'samer_out') detail = 'خصم سامر';
+        if (type === 'mahmoud_out') detail = 'خصم محمود';
+        if (type === 'joint_in') detail = `مشترك (${samerPart} لسامر)`;
+
+        appData.entries.push({ type, amt, desc, samerPart, detail });
+        saveData();
+
+        document.getElementById('amount').value = '';
+        document.getElementById('samerShare').value = '';
+        document.getElementById('desc').value = '';
+        updateView();
+    }
+
+    function removeEntry(index) {
+        appData.entries.splice(index, 1);
+        saveData();
+        updateView();
+    }
+
+    function resetAll() {
+        if (confirm('هل أنت متأكد من مسح جميع الحركات المحفوظة والعودة للرصيد التأسيسي؟')) {
+            appData.entries = [];
+            saveData();
+            updateView();
+        }
+    }
+
+    // بدء التشغيل
+    loadData();
+    updateView();
+</script>
+</body>
+</html>
