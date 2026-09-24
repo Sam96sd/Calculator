@@ -8,6 +8,13 @@
       "desc": "",
       "samerPart": 0,
       "detail": "لسامر"
+    },
+    {
+      "type": "mahmoud_out",
+      "amt": 2239.5,
+      "desc": "محمود سحب من سامر",
+      "samerPart": 0,
+      "detail": "خصم محمود"
     }
   ]
 }
