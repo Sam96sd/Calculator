@@ -50,6 +50,13 @@
       "desc": "ستارلينك",
       "samerPart": 0,
       "detail": "خصم سامر"
+    },
+    {
+      "type": "mahmoud_out",
+      "amt": 1384,
+      "desc": "تحويل 376 دولار",
+      "samerPart": 0,
+      "detail": "خصم محمود"
     }
   ]
 }
