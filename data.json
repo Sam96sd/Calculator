@@ -43,6 +43,13 @@
       "desc": "من محمد من بايبال",
       "samerPart": 0,
       "detail": "لسامر"
+    },
+    {
+      "type": "samer_out",
+      "amt": 380.93,
+      "desc": "ستارلينك",
+      "samerPart": 0,
+      "detail": "خصم سامر"
     }
   ]
 }
